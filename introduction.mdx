@@ -1,0 +1,60 @@
+---
+title: "Introduction"
+description: "NdLinear is a drop-in replacement for nn.Linear that preserves multi-dimensional tensor structure in PyTorch models."
+---
+
+NdLinear is an open-source PyTorch module by [Ensemble AI](https://ensemblecore.ai) that replaces `nn.Linear` without collapsing your tensors into flat vectors. Instead of flattening multi-dimensional inputs, NdLinear applies a sequence of dimension-wise linear transformations — one per dimension — preserving the spatial and structural relationships in your data throughout the forward pass.
+
+The approach is described in the paper [NdLinear Is All You Need for Representation Learning](https://arxiv.org/pdf/2503.17353).
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Drop-in replacement" icon="right-left">
+    Swap `nn.Linear` for `NdLinear` with a one-line change. Same interface, no reshaping required in calling code.
+  </Card>
+  <Card title="Structure-preserving" icon="table-cells">
+    Applies transformations across each dimension independently, keeping spatial and sequential structure intact.
+  </Card>
+  <Card title="Parameter efficient" icon="chart-bar">
+    Dimension-wise factorization often yields significantly fewer parameters than a full linear projection of the same output size.
+  </Card>
+  <Card title="Gated variant" icon="sliders">
+    `NdLinearGated` adds soft or hard gating to learn which dimensional interactions matter most.
+  </Card>
+</CardGroup>
+
+## How it works
+
+A standard `nn.Linear(in, out)` flattens the input and applies a single weight matrix of shape `(in, out)`. NdLinear instead accepts an `input_dims` tuple and a `hidden_size` tuple of the same length, and applies one `nn.Linear` per dimension via transpose, flatten, apply, and restore operations. The result is an output tensor with the same number of dimensions as the input, but with each dimension size transformed to the corresponding value in `hidden_size`.
+
+```python
+import torch
+from ndlinear import NdLinear
+
+# Input: batch of images with shape (batch, H, W, C)
+layer = NdLinear(input_dims=(28, 28, 3), hidden_size=(64, 64, 6))
+output = layer(torch.randn(32, 28, 28, 3))
+# output.shape == (32, 64, 64, 6)
+```
+
+The `transform_outer=True` default processes dimensions from outermost to innermost. Each dimension's transformation is aware of the others through sequential composition.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install via pip, conda, or from source.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build a working NdLinear layer in 5 minutes.
+  </Card>
+</CardGroup>
+
+## Ensemble Platform
+
+NdLinear is part of the broader Ensemble ecosystem. The [Ensemble Platform](/platform/overview) provides tooling for training, evaluating, and deploying models built with NdLinear and related components.
+
+## Community
+
+Join the conversation on [Discord](https://discord.gg/6DWHusWN) to ask questions, share results, and follow development.

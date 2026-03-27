@@ -1,0 +1,105 @@
+---
+title: "NdLinear"
+description: "A PyTorch layer for projecting tensors into multi-space representations."
+---
+
+`NdLinear` is a drop-in replacement for `nn.Linear` that operates across multiple tensor dimensions simultaneously. Instead of mapping an input into a single vector space, it applies a separate linear transformation to each dimension of the input tensor, preserving multivariate structure that standard layers flatten away.
+
+This makes it well-suited for structured inputs such as images, sequences, and multi-channel feature maps, where the spatial or temporal relationships between dimensions carry meaningful information.
+
+## Constructor
+
+```python
+class NdLinear(nn.Module):
+    def __init__(self, input_dims: tuple, hidden_size: tuple, transform_outer=True)
+```
+
+<ParamField path="input_dims" type="tuple" required>
+  Shape of the input tensor, excluding the batch dimension. For example, an image of shape `[batch, 28, 28, 3]` has `input_dims=(28, 28, 3)`.
+</ParamField>
+
+<ParamField path="hidden_size" type="tuple" required>
+  Target output dimensions after transformation. Must have the same length as `input_dims`. Each element specifies the output size for the corresponding dimension's linear projection.
+</ParamField>
+
+<ParamField path="transform_outer" type="boolean" default="True">
+  If `True`, transformations are applied from the outermost dimension inward. Controls the order in which per-dimension projections are composed.
+</ParamField>
+
+<Note>
+  `input_dims` and `hidden_size` must have the same length. If they do not, an `Exception` is raised at construction time.
+</Note>
+
+## Forward pass
+
+```python
+def forward(self, X: torch.Tensor) -> torch.Tensor
+```
+
+Projects the input tensor into a new multi-space representation by applying independent linear transformations along each dimension.
+
+| | Shape |
+|---|---|
+| Input `X` | `[batch_size, *input_dims]` |
+| Output | `[batch_size, *hidden_size]` |
+
+## Internal structure
+
+`NdLinear` creates one `nn.Linear` layer per dimension:
+
+```python
+self.align_layers = nn.ModuleList([
+    nn.Linear(input_dims[i], hidden_size[i]) for i in range(num_layers)
+])
+```
+
+**Parameter count:** The total number of trainable parameters is the sum of `(input_dims[i] * hidden_size[i]) + hidden_size[i]` across all dimensions `i`, which grows linearly rather than multiplicatively with the number of dimensions.
+
+<Note>
+  For a 1D input (e.g., `input_dims=(512,)`, `hidden_size=(256,)`), `NdLinear` behaves identically to a single `nn.Linear(512, 256)` layer.
+</Note>
+
+## Examples
+
+### Basic usage
+
+```python
+import torch
+from ndlinear import NdLinear
+
+# Project a 28x28x3 image tensor to 64x64x6
+layer = NdLinear(input_dims=(28, 28, 3), hidden_size=(64, 64, 6))
+
+batch = torch.randn(16, 28, 28, 3)  # [batch_size, *input_dims]
+output = layer(batch)               # [16, 64, 64, 6]
+print(output.shape)                 # torch.Size([16, 64, 64, 6])
+```
+
+### 1D edge case — equivalent to nn.Linear
+
+```python
+import torch
+import torch.nn as nn
+from ndlinear import NdLinear
+
+nd_layer = NdLinear(input_dims=(512,), hidden_size=(256,))
+linear_layer = nn.Linear(512, 256)
+
+x = torch.randn(8, 512)
+print(nd_layer(x).shape)    # torch.Size([8, 256])
+print(linear_layer(x).shape) # torch.Size([8, 256])
+```
+
+### Sequence input
+
+```python
+import torch
+from ndlinear import NdLinear
+
+# Project a sequence of length 128 with embedding dim 768
+layer = NdLinear(input_dims=(128, 768), hidden_size=(64, 256))
+
+batch = torch.randn(4, 128, 768)
+output = layer(batch)  # [4, 64, 256]
+print(output.shape)    # torch.Size([4, 64, 256])
+```

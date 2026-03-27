@@ -1,0 +1,117 @@
+---
+title: "Parameter Efficiency"
+description: "NdLinear uses dramatically fewer parameters than a standard linear layer by factoring the transformation across dimensions."
+---
+
+The most significant practical advantage of NdLinear over a standard `nn.Linear` is parameter count. For multi-dimensional data, the difference is often several orders of magnitude.
+
+## Why standard linear layers are expensive
+
+A standard `nn.Linear(in_features, out_features)` has `in_features × out_features` weight parameters. To apply it to a multi-dimensional tensor, you must flatten the input first.
+
+For an input of shape `[batch, d1, d2, ..., dn]`, the flat input size is `d1 × d2 × ... × dn` and the flat output size is `h1 × h2 × ... × hn`. The weight matrix is:
+
+```
+params = (d1 × d2 × ... × dn) × (h1 × h2 × ... × hn)
+```
+
+This grows multiplicatively with every dimension you add.
+
+## How NdLinear counts parameters
+
+NdLinear creates one `nn.Linear(d_i, h_i)` per dimension. The total weight count is:
+
+```
+params = sum(d_i × h_i for i in range(n)) + sum(h_i for i in range(n))
+         ^--- weights                         ^--- biases
+```
+
+This grows **additively**, not multiplicatively.
+
+## Concrete example
+
+Consider mapping an input of shape `(28, 28, 3)` to a hidden size of `(64, 64, 6)` — a typical scenario for an RGB image patch.
+
+<Tabs>
+  <Tab title="NdLinear">
+    Three sub-layers, one per dimension:
+
+    | Dimension | Input | Output | Weights        |
+    |-----------|-------|--------|----------------|
+    | 0         | 28    | 64     | 28 × 64 = 1,792 |
+    | 1         | 28    | 64     | 28 × 64 = 1,792 |
+    | 2         | 3     | 6      | 3 × 6 = 18      |
+
+    **Total weights: 3,602**  
+    Plus biases: 64 + 64 + 6 = 134  
+    **Total parameters: 3,736**
+
+    ```python
+    from ndlinear import NdLinear
+
+    layer = NdLinear(input_dims=(28, 28, 3), hidden_size=(64, 64, 6))
+    # 3,736 total parameters
+    ```
+  </Tab>
+  <Tab title="nn.Linear equivalent">
+    One layer over the flattened input:
+
+    - Flat input: 28 × 28 × 3 = **2,352**
+    - Flat output: 64 × 64 × 6 = **24,576**
+    - Weight matrix: 2,352 × 24,576 = **57,802,752**
+    - Biases: 24,576
+    - **Total parameters: 57,827,328**
+
+    ```python
+    import torch.nn as nn
+
+    layer = nn.Linear(2352, 24576)
+    # 57,827,328 total parameters
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  That is approximately **15,500× fewer parameters** for the same logical transformation on this input shape.
+</Note>
+
+## Formula summary
+
+```
+NdLinear parameters  = Σ (d_i × h_i) + Σ h_i
+nn.Linear parameters = Π d_i × Π h_i  + Π h_i
+```
+
+The additive structure of NdLinear keeps parameter counts tractable even as the number of dimensions grows.
+
+## Real-world impact
+
+Fewer parameters has two practical consequences:
+
+1. **Smaller models** — NdLinear can reduce overall model size by up to 8× in architectures that use many linear layers over structured data.
+2. **Structural preservation** — Standard layers lose the spatial and channel relationships when they flatten the input. NdLinear keeps those relationships intact by transforming each dimension independently, which can improve accuracy despite having fewer parameters.
+
+### DiT benchmark
+
+A 130M parameter NdLinear-based DiT (Diffusion Transformer) outperforms a 457M parameter baseline on ImageNet-100 FID. The NdLinear model is **3.5× smaller** while achieving better image generation quality.
+
+<Tip>
+  Parameter efficiency matters most when your input data has genuine multi-dimensional structure — images, video frames, spectrograms, spatial feature maps. For 1D inputs, NdLinear and `nn.Linear` have identical parameter counts.
+</Tip>
+
+## Works with existing optimization techniques
+
+Parameter efficiency from NdLinear composes with other compression strategies:
+
+- **Pruning** — Fewer starting parameters means less to prune.
+- **Quantization** — Smaller weight matrices are faster to quantize and store.
+- **Knowledge distillation** — A compact NdLinear student model is easier to train from a large teacher.
+
+<CardGroup cols={2}>
+  <Card title="How it works" href="/concepts/how-it-works">
+    Understand the forward pass that makes this efficiency possible.
+  </Card>
+  <Card title="NdLinear vs nn.Linear" href="/concepts/vs-linear">
+    Side-by-side comparison and guidance on when to use each.
+  </Card>
+</CardGroup>

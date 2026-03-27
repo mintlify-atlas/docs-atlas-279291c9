@@ -1,80 +1,105 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get a working NdLinear layer running in 5 minutes."
 ---
 
-## Get started in three steps
+This guide walks you through creating an NdLinear layer, running a forward pass, verifying output shapes, and comparing parameter counts against `nn.Linear`.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Install the package">
+    If you haven't installed NdLinear yet, see the [installation guide](/installation). The minimal install is:
 
-### Step 1: Set up your local environment
+    ```bash
+    pip install ndlinear
+    ```
+  </Step>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Create a layer and run a forward pass">
+    The most common use case is transforming a batch of multi-dimensional inputs — for example, a batch of images with shape `(batch, height, width, channels)`.
 
-### Step 2: Deploy your changes
+    ```python
+    import torch
+    from ndlinear import NdLinear
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    # Batch of 32 grayscale images: (batch, height, width, channels)
+    x = torch.randn(32, 28, 28, 3)
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    # input_dims and hidden_size must have the same length
+    layer = NdLinear(input_dims=(28, 28, 3), hidden_size=(64, 64, 6))
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    output = layer(x)
+    ```
 
-### Step 3: Go live
+    <Tip>
+      `input_dims` describes the shape of a single sample (excluding the batch dimension). `hidden_size` is the desired output shape for that sample, with one value per dimension.
+    </Tip>
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Verify the output shape">
+    The output preserves the number of dimensions, with each dimension size mapped to the corresponding value in `hidden_size`:
+
+    ```python
+    print(output.shape)  # torch.Size([32, 64, 64, 6])
+    assert output.shape == (32, 64, 64, 6)
+    ```
+
+    The batch dimension passes through unchanged. Only the dimensions listed in `input_dims` are transformed.
+  </Step>
+
+  <Step title="Compare parameter counts">
+    One of the main benefits of NdLinear is parameter efficiency. Compare it against a naive `nn.Linear` that projects the same flattened input to the same flattened output:
+
+    ```python
+    import torch.nn as nn
+
+    # Equivalent nn.Linear: flattens 28*28*3=2352 -> 64*64*6=24576
+    linear = nn.Linear(28 * 28 * 3, 64 * 64 * 6)
+
+    def count_params(m):
+        return sum(p.numel() for p in m.parameters())
+
+    print(f"nn.Linear params:  {count_params(linear):,}")
+    print(f"NdLinear params:   {count_params(layer):,}")
+    ```
+
+    NdLinear applies one small linear per dimension rather than one large matrix, so the parameter count scales additively rather than multiplicatively.
+  </Step>
+</Steps>
+
+## 1D edge case
+
+When `input_dims` and `hidden_size` each have a single element, NdLinear behaves identically to `nn.Linear`:
+
+```python
+layer_1d = NdLinear(input_dims=(32,), hidden_size=(64,))
+x = torch.randn(16, 32)
+print(layer_1d(x).shape)  # torch.Size([16, 64])
+```
+
+This makes it safe to use NdLinear uniformly throughout a codebase without special-casing 1D projections.
+
+## Using NdLinear in a transformer
+
+To use NdLinear as a token-wise projection inside a transformer, reshape the sequence so each token occupies a separate batch element:
+
+```python
+# Input: (batch, seq_len, token_dim) = (32, 28, 28)
+x = torch.randn(32, 28, 28)
+
+# Treat each token as a (token_dim, 1) sample
+x = x.reshape(-1, 28, 1)              # (32*28, 28, 1) = (896, 28, 1)
+
+layer = NdLinear(input_dims=(28, 1), hidden_size=(32, 1))
+out = layer(x)                        # (896, 32, 1)
+
+out = out.reshape(32, 28, -1)         # (32, 28, 32)
+print(out.shape)                      # torch.Size([32, 28, 32])
+```
+
+<Tip>
+  Keep the trailing singleton dimension (`1`) in place when adapting sequences. It acts as a placeholder that lets NdLinear apply the transformation without changing the number of dimensions.
+</Tip>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+For more detailed examples including custom architectures and the gated variant, see the guides section.

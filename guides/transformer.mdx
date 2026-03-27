@@ -1,0 +1,133 @@
+---
+title: "Transformers"
+description: "Replace MLP and feed-forward layers inside Transformer blocks with NdLinear to reduce parameter count while preserving token-level structure."
+---
+
+The feed-forward network (FFN) inside a Transformer block is one of the largest parameter contributors in the model. It typically expands and then contracts the token embedding dimension using two `nn.Linear` layers. NdLinear can replace these layers, treating each token's embedding as a structured tensor rather than a flat vector.
+
+## How the reshape works
+
+Standard Transformer input has shape `(batch, seq_len, embed_dim)`. To apply NdLinear to each token independently, reshape the token dimension into a 2D tensor before passing it through the layer.
+
+```python
+import torch
+from ndlinear import NdLinear
+
+# Input: (batch_size=32, num_tokens=28, token_dim=28)
+input_tensor = torch.randn(32, 28, 28)
+
+# Reshape: treat each token as a (token_dim, 1) tensor
+# New shape: (batch_size * num_tokens, token_dim, 1) = (896, 28, 1)
+reshaped = input_tensor.reshape(-1, 28, 1)
+
+# Project each token from (28, 1) to (32, 1)
+ndlinear_layer = NdLinear(input_dims=(28, 1), hidden_size=(32, 1))
+output = ndlinear_layer(reshaped)  # (896, 32, 1)
+
+# Reshape back to (batch, seq_len, new_hidden_dim)
+output = output.reshape(32, 28, -1)  # (32, 28, 32)
+```
+
+The trailing `1` dimension is a factorization choice. It lets NdLinear apply its structured projection to the embedding dimension without needing a genuinely 2D input. The result after reshaping back is `(batch, seq_len, new_hidden_dim)` — the same shape contract as a standard linear layer.
+
+<Note>
+The `reshape(-1, token_dim, 1)` folds the batch and sequence dimensions together so NdLinear processes each token independently. The final `reshape(batch, seq_len, -1)` separates them again.
+</Note>
+
+## Replacing the FFN inside a Transformer block
+
+Here is a self-contained Transformer block where both FFN layers use NdLinear:
+
+```python
+import torch
+import torch.nn as nn
+from ndlinear import NdLinear
+
+class NdLinearFFN(nn.Module):
+    """Feed-forward network using NdLinear for both projection layers."""
+
+    def __init__(self, embed_dim, ffn_dim, dropout=0.1):
+        super().__init__()
+        # Factorize embed_dim as (embed_dim, 1) for structured projection
+        self.fc1 = NdLinear(input_dims=(embed_dim, 1), hidden_size=(ffn_dim, 1))
+        self.fc2 = NdLinear(input_dims=(ffn_dim, 1), hidden_size=(embed_dim, 1))
+        self.dropout = nn.Dropout(dropout)
+        self.act = nn.GELU()
+
+    def forward(self, x):
+        # x: (batch, seq_len, embed_dim)
+        batch, seq_len, embed_dim = x.shape
+
+        x = x.reshape(-1, embed_dim, 1)         # (batch*seq_len, embed_dim, 1)
+        x = self.act(self.fc1(x))               # (batch*seq_len, ffn_dim, 1)
+        x = self.dropout(x)
+        x = self.fc2(x)                         # (batch*seq_len, embed_dim, 1)
+        x = x.reshape(batch, seq_len, embed_dim) # (batch, seq_len, embed_dim)
+        return x
+
+
+class TransformerBlock(nn.Module):
+    def __init__(self, embed_dim, num_heads, ffn_dim, dropout=0.1):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True)
+        self.ffn = NdLinearFFN(embed_dim, ffn_dim, dropout)
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.norm2 = nn.LayerNorm(embed_dim)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, attn_mask=None):
+        # Self-attention with residual
+        attn_out, _ = self.attn(x, x, x, attn_mask=attn_mask)
+        x = self.norm1(x + self.dropout(attn_out))
+
+        # FFN with residual
+        x = self.norm2(x + self.ffn(x))
+        return x
+```
+
+Usage:
+
+```python
+block = TransformerBlock(embed_dim=256, num_heads=8, ffn_dim=1024)
+x = torch.randn(16, 64, 256)  # (batch, seq_len, embed_dim)
+out = block(x)                # (16, 64, 256)
+```
+
+## Vision Transformer support
+
+The repository includes `src/vit_distill.py`, a Vision Transformer training script that uses NdLinear inside the patch-embedding MLP layers. It supports multi-GPU training via PyTorch DDP:
+
+```bash
+torchrun --nnodes 1 --nproc_per_node=4 src/vit_distill.py \
+    --num_epochs 30 \
+    --num_transformers 6 \
+    --dataset CIFAR100 \
+    --batch_size 256 \
+    --lr 2.75e-4
+```
+
+The `--num_transformers` flag controls the depth of the ViT encoder. Each transformer block uses NdLinear in place of the standard dense FFN.
+
+<Tip>
+When replacing FFN layers in a pretrained Transformer, initialize the NdLinear weights to approximate the original linear projection before fine-tuning. This reduces the number of steps needed to recover baseline performance.
+</Tip>
+
+## Output shape reference
+
+| Stage | Shape |
+|-------|-------|
+| Input | `(batch, seq_len, embed_dim)` |
+| After reshape | `(batch × seq_len, embed_dim, 1)` |
+| After NdLinear | `(batch × seq_len, hidden_dim, 1)` |
+| After reshape back | `(batch, seq_len, hidden_dim)` |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="CNN image classification" icon="image" href="/guides/cnn">
+    Use NdLinear after convolutional layers to preserve spatial structure.
+  </Card>
+  <Card title="Multi-layer perceptrons" icon="layers" href="/guides/mlp">
+    Build fully-connected networks using factored NdLinear layers.
+  </Card>
+</CardGroup>

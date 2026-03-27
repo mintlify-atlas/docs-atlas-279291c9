@@ -1,0 +1,139 @@
+---
+title: "NdLinear vs nn.Linear"
+description: "A direct comparison of NdLinear and PyTorch's standard nn.Linear, including when to use each and how to migrate."
+---
+
+NdLinear is designed to be a drop-in replacement for `nn.Linear` when your data has multi-dimensional structure. This page covers the differences, a migration guide, and guidance on when each is the right choice.
+
+## Comparison table
+
+| | `nn.Linear` | `NdLinear` |
+|---|---|---|
+| Input shape | 1D `(*, in_features)` | N-D `(batch, d1, d2, ..., dn)` |
+| Requires flattening | Yes, for multi-dim input | No |
+| Parameter count | `Π d_i × Π h_i` (multiplicative) | `Σ d_i × h_i` (additive) |
+| Preserves spatial structure | No | Yes |
+| 1D edge case behavior | Native | Identical to `nn.Linear` |
+| Works with pruning / quantization | Yes | Yes |
+| PyTorch compatibility | Full | Full (`nn.Module` subclass) |
+
+## When to use NdLinear
+
+<CardGroup cols={2}>
+  <Card title="Multi-dimensional data" icon="grid">
+    Images `(H, W, C)`, video `(T, H, W, C)`, spectrograms `(F, T)`, spatial feature maps. Anywhere the input has meaningful structure across multiple axes.
+  </Card>
+  <Card title="Parameter-constrained environments" icon="microchip">
+    Edge inference, mobile models, or any scenario where model size is a hard constraint. NdLinear can reduce linear layer parameter counts by orders of magnitude.
+  </Card>
+  <Card title="Transformers and attention" icon="bolt">
+    Projection layers in attention mechanisms that operate on structured tokens (e.g., patch embeddings in vision transformers).
+  </Card>
+  <Card title="Replacing large projection layers" icon="arrows-left-right">
+    Any `nn.Linear` that currently receives a flattened multi-dimensional input is a candidate for replacement.
+  </Card>
+</CardGroup>
+
+## When nn.Linear is fine
+
+- Your input is genuinely 1D (e.g., a flat embedding vector, a scalar feature set).
+- The dimensions of your tensor have no structural relationship worth preserving.
+- You are working with a small model where parameter count is not a concern.
+
+<Note>
+  When `input_dims` has only one element, `NdLinear` creates a single sub-layer and behaves identically to `nn.Linear`. It is safe to use `NdLinear` universally — it will never be worse than `nn.Linear`.
+</Note>
+
+## Code comparison
+
+The following examples show a typical before/after migration.
+
+<CodeGroup>
+
+```python before.py
+import torch
+import torch.nn as nn
+
+class ImageProjection(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Must flatten (28, 28, 3) to 2352 before passing to linear
+        self.proj = nn.Linear(2352, 24576)
+
+    def forward(self, x):
+        # x shape: [batch, 28, 28, 3]
+        x = x.view(x.size(0), -1)   # [batch, 2352]
+        x = self.proj(x)             # [batch, 24576]
+        return x
+```
+
+```python after.py
+import torch
+from ndlinear import NdLinear
+
+class ImageProjection(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # No flattening needed — NdLinear operates on the raw shape
+        self.proj = NdLinear(input_dims=(28, 28, 3), hidden_size=(64, 64, 6))
+
+    def forward(self, x):
+        # x shape: [batch, 28, 28, 3]
+        x = self.proj(x)  # [batch, 64, 64, 6]
+        return x
+```
+
+</CodeGroup>
+
+The `after.py` version uses **3,736 parameters** instead of **57,827,328** — and preserves the spatial structure of the image throughout the projection.
+
+## The 1D edge case
+
+If you pass a single-element tuple to `NdLinear`, it creates exactly one sub-layer:
+
+```python
+import torch
+from ndlinear import NdLinear
+
+# These two layers are functionally equivalent
+linear = torch.nn.Linear(128, 256)
+nd_linear = NdLinear(input_dims=(128,), hidden_size=(256,))
+
+x = torch.randn(32, 128)
+out_linear = linear(x)     # [32, 256]
+out_nd = nd_linear(x)      # [32, 256] — identical behavior
+```
+
+This means you can safely adopt `NdLinear` as a universal replacement without worrying about regressions on 1D inputs.
+
+## Composing with other techniques
+
+NdLinear is a standard `nn.Module` and works alongside any standard PyTorch optimization:
+
+```python
+import torch
+from ndlinear import NdLinear
+
+model = NdLinear(input_dims=(28, 28, 3), hidden_size=(64, 64, 6))
+
+# Quantization
+quantized = torch.quantization.quantize_dynamic(model, {NdLinear}, dtype=torch.qint8)
+
+# Pruning (via torch.nn.utils.prune)
+import torch.nn.utils.prune as prune
+for sub_layer in model.align_layers:
+    prune.l1_unstructured(sub_layer, name='weight', amount=0.2)
+```
+
+<Tip>
+  Because NdLinear already starts with far fewer parameters than an equivalent `nn.Linear`, even light pruning or quantization on top can produce extremely compact models.
+</Tip>
+
+<CardGroup cols={2}>
+  <Card title="How it works" href="/concepts/how-it-works">
+    Understand the dimension-wise forward pass in detail.
+  </Card>
+  <Card title="Parameter efficiency" href="/concepts/parameter-efficiency">
+    See the exact parameter count formulas and benchmark numbers.
+  </Card>
+</CardGroup>

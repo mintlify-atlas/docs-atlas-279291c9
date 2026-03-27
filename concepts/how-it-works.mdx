@@ -1,0 +1,133 @@
+---
+title: "How It Works"
+description: "NdLinear applies one small linear transformation per dimension instead of one large matrix multiply over a flattened tensor."
+---
+
+A standard `nn.Linear` layer expects a flat input vector. To use it with multi-dimensional data — images, time series, spatial features — you must first flatten the tensor. That flattening discards the structural relationships between dimensions.
+
+NdLinear takes a different approach: it applies one small linear layer **per dimension**, preserving structure throughout the transformation.
+
+## The core idea
+
+Given an input tensor of shape `[batch, d1, d2, ..., dn]` and a target hidden size `[h1, h2, ..., hn]`, NdLinear creates `n` independent linear layers:
+
+- Layer 0: maps `d1 → h1`
+- Layer 1: maps `d2 → h2`
+- Layer `n-1`: maps `dn → hn`
+
+Each layer operates on one dimension at a time, cycling through all `n` dimensions in sequence.
+
+## Step-by-step walkthrough
+
+Consider an input tensor `X` with shape `[32, 28, 28, 3]` (a batch of 32 RGB images, 28×28 pixels).
+
+NdLinear is initialized as:
+
+```python
+from ndlinear import NdLinear
+
+layer = NdLinear(input_dims=(28, 28, 3), hidden_size=(64, 64, 6))
+```
+
+This creates three `nn.Linear` sub-layers: `28→64`, `28→64`, and `3→6`.
+
+<Steps>
+  <Step title="Process dimension 0 (size 28 → 64)">
+    The layer transposes dimension 1 with the last dimension, reshapes so the last axis is the active one, applies `Linear(28, 64)`, then restores the shape and transposes back.
+
+    Shape after this step: `[32, 64, 28, 3]`
+  </Step>
+  <Step title="Process dimension 1 (size 28 → 64)">
+    Same operation for the second spatial dimension. The layer acts on dimension 2.
+
+    Shape after this step: `[32, 64, 64, 3]`
+  </Step>
+  <Step title="Process dimension 2 (size 3 → 6)">
+    The channel dimension is transformed last.
+
+    Shape after this step: `[32, 64, 64, 6]`
+  </Step>
+</Steps>
+
+The output shape is `[32, 64, 64, 6]` — exactly what you'd get from a conceptual `nn.Linear(2352, 24576)`, but at a tiny fraction of the parameter cost.
+
+## The per-step operation
+
+For each dimension `i`, the forward pass does the following:
+
+```python
+# Bring dimension i to the last position
+X = torch.transpose(X, i + 1, num_dims).contiguous()
+
+# Flatten all leading dims, keep last dim active
+X_size = X.shape[:-1]
+X = X.view(-1, X.shape[-1])
+
+# Apply the small linear layer for this dimension
+X = align_layers[i](X)
+
+# Restore shape
+X = X.view(*X_size, X.shape[-1])
+
+# Swap back
+X = torch.transpose(X, i + 1, num_dims).contiguous()
+```
+
+This is repeated for every dimension in sequence.
+
+## Processing order: `transform_outer`
+
+The `transform_outer` flag controls which direction dimensions are processed.
+
+<Tabs>
+  <Tab title="transform_outer=True (default)">
+    Dimensions are processed from the **outermost** (first) to the innermost (last). This is the default behavior.
+
+    ```python
+    layer = NdLinear(input_dims=(28, 28, 3), hidden_size=(64, 64, 6), transform_outer=True)
+    # Processes: dim 0 → dim 1 → dim 2
+    ```
+  </Tab>
+  <Tab title="transform_outer=False">
+    Dimensions are processed from the **innermost** (last) to the outermost (first).
+
+    ```python
+    layer = NdLinear(input_dims=(28, 28, 3), hidden_size=(64, 64, 6), transform_outer=False)
+    # Processes: dim 2 → dim 1 → dim 0
+    ```
+
+    This can matter when the relative importance or scale of dimensions differs and you want the inner structure transformed before the outer.
+  </Tab>
+</Tabs>
+
+<Note>
+  For most use cases, the default `transform_outer=True` is the right choice. Experiment with `transform_outer=False` if you have domain-specific reasons to prioritize inner dimensions.
+</Note>
+
+## Full usage example
+
+```python
+import torch
+from ndlinear import NdLinear
+
+# Input: batch of 32 images, shape [32, 28, 28, 3]
+X = torch.randn(32, 28, 28, 3)
+
+layer = NdLinear(input_dims=(28, 28, 3), hidden_size=(64, 64, 6))
+
+output = layer(X)
+print(output.shape)  # [32, 64, 64, 6]
+```
+
+## Research
+
+NdLinear is described in the paper [NdLinear Is All You Need for Representation Learning](https://arxiv.org/abs/2503.17353). The paper demonstrates that dimension-wise transformations preserve structural information that flattening discards, leading to better parameter efficiency without sacrificing model quality.
+
+<CardGroup cols={2}>
+  <Card title="Parameter efficiency" href="/concepts/parameter-efficiency">
+    See exactly how many parameters NdLinear uses compared to a standard linear layer.
+  </Card>
+  <Card title="NdLinear vs nn.Linear" href="/concepts/vs-linear">
+    When to use NdLinear, and when a plain linear layer is sufficient.
+  </Card>
+</CardGroup>

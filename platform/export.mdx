@@ -1,0 +1,90 @@
+---
+title: "Model Export"
+description: "Export models compressed by the Ensemble Platform to ONNX, TensorRT, SNPE, and other deployment formats."
+---
+
+Models compressed by the [Ensemble Platform](/platform/overview) can be exported to multiple deployment formats. Because NdLinear layers are standard `nn.Module` subclasses, they pass through standard PyTorch export tooling without any special handling.
+
+## Supported formats
+
+<CardGroup cols={3}>
+  <Card title="ONNX" icon="globe">
+    Cross-platform interoperability. Run compressed models with ONNX Runtime on any supported hardware.
+  </Card>
+  <Card title="TensorRT" icon="bolt">
+    NVIDIA GPU acceleration. Optimized for low-latency inference on CUDA devices.
+  </Card>
+  <Card title="SNPE" icon="mobile">
+    Qualcomm neural processing. Targets mobile and edge devices using the Snapdragon Neural Processing Engine.
+  </Card>
+</CardGroup>
+
+## ONNX
+
+ONNX provides a portable, hardware-agnostic format for running models across runtimes and platforms. Use it with [ONNX Runtime](https://onnxruntime.ai/) for CPU, GPU, and accelerator inference.
+
+Because `NdLinear` is a plain `nn.Module` subclass, `torch.onnx.export` traces through it without modification:
+
+```python
+import torch
+import torch.nn as nn
+from ndlinear import NdLinear
+
+# Example model using NdLinear
+class CompressedModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layer = NdLinear((8, 8), (4, 4))
+
+    def forward(self, x):
+        return self.layer(x)
+
+model = CompressedModel()
+model.eval()
+
+dummy_input = torch.randn(1, 8, 8)
+
+torch.onnx.export(
+    model,
+    dummy_input,
+    "compressed_model.onnx",
+    input_names=["input"],
+    output_names=["output"],
+    opset_version=17,
+)
+```
+
+<Note>
+  The exported ONNX graph reflects the underlying matrix operations that NdLinear decomposes to — no custom ONNX ops are required.
+</Note>
+
+## TensorRT
+
+TensorRT is NVIDIA's inference optimization library, targeting maximum throughput on CUDA-capable GPUs. Export to ONNX first, then compile with TensorRT for deployment:
+
+```python
+# After exporting to ONNX (see above), compile with TensorRT
+# using trtexec or the TensorRT Python API.
+# Example using trtexec:
+# trtexec --onnx=compressed_model.onnx --saveEngine=compressed_model.trt
+```
+
+```bash
+trtexec --onnx=compressed_model.onnx --saveEngine=compressed_model.trt
+```
+
+## SNPE
+
+The Snapdragon Neural Processing Engine (SNPE) targets Qualcomm-powered mobile and edge devices. Convert an ONNX export to the `.dlc` format using the SNPE SDK:
+
+```bash
+snpe-onnx-to-dlc --input_network compressed_model.onnx --output_path compressed_model.dlc
+```
+
+<Tip>
+  SNPE export is well-suited for models that will run on Android devices or Qualcomm-based embedded hardware. Refer to the Qualcomm SNPE documentation for quantization and runtime options.
+</Tip>
+
+## Further reading
+
+- [Ensemble Platform overview](/platform/overview) — how compression works before export

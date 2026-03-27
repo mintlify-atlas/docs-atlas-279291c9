@@ -1,0 +1,130 @@
+---
+title: "Multi-Layer Perceptrons"
+description: "Build parameter-efficient MLPs with NdLinear by using factored input and hidden dimensions instead of large flat linear layers."
+---
+
+NdLinear can be used as a drop-in replacement for `nn.Linear` in any MLP. The key difference is in how you specify the dimensions: instead of a single integer, you provide a tuple that factorizes the input and output sizes.
+
+## Basic two-layer MLP
+
+NdLinear expects the input tensor shape (excluding the batch dimension) to match `input_dims` exactly. For a 1D feature vector of size 128, you can factor it as `(128, 8)` by reshaping first, or use `(128, 1)` with an unsqueeze:
+
+```python
+import torch
+import torch.nn.functional as F
+from ndlinear import NdLinear
+
+# (batch, features) — 1D input
+input_tensor = torch.randn(32, 128)
+
+# Reshape to match input_dims=(128, 1): add a trailing dimension
+x = input_tensor.unsqueeze(-1)  # (32, 128, 1)
+
+layer1 = NdLinear(input_dims=(128, 1), hidden_size=(64, 8))
+layer2 = NdLinear(input_dims=(64, 8), hidden_size=(10, 2))
+
+x = F.relu(layer1(x))  # (32, 64, 8)
+output = layer2(x)     # (32, 10, 2)
+```
+
+<Note>
+`input_dims` must match the shape of the input tensor excluding the batch dimension. If your data is a flat `(batch, N)` tensor, either use `input_dims=(N,)` for a 1D projection (equivalent to `nn.Linear`) or reshape to `(batch, a, b)` and use `input_dims=(a, b)` where `a * b` represents your factored feature space.
+</Note>
+
+## Understanding factored dimensions
+
+Instead of specifying a flat hidden dimension like `1024`, you factor it into a tuple such as `(128, 8)` where `128 × 8 = 1024`. NdLinear then applies separate projections along each factor dimension and combines them.
+
+Parameter count for a single layer comparing `nn.Linear` vs `NdLinear`:
+
+| Layer | Parameters |
+|-------|------------|
+| `nn.Linear(1024, 512)` | 1,024 × 512 = **524,288** |
+| `NdLinear((128, 8), (64, 8))` | 128×64 + 8×8 = **8,256** |
+
+<Tip>
+Choose factor dimensions that are roughly equal in size (e.g., `(32, 32)` rather than `(1, 1024)`) for the best parameter efficiency. Highly unequal factors reduce the benefit of the structured projection.
+</Tip>
+
+## The 1D edge case
+
+When `input_dims` and `hidden_size` are both 1-tuples, NdLinear behaves identically to `nn.Linear`:
+
+```python
+from ndlinear import NdLinear
+import torch.nn as nn
+
+# These two layers are functionally equivalent
+linear = nn.Linear(32, 64)
+ndlinear = NdLinear(input_dims=(32,), hidden_size=(64,))
+```
+
+This makes NdLinear a safe replacement — you can start with 1D dims and gradually factor them as you tune the model.
+
+## Complete MLP class
+
+```python
+import torch
+import torch.nn as nn
+from ndlinear import NdLinear
+
+class NdLinearMLP(nn.Module):
+    """
+    A fully-connected network using NdLinear layers with factored dimensions.
+    """
+
+    def __init__(self, num_classes=10):
+        super().__init__()
+        # Input: (batch, 128) treated as (batch, 128, 1) implicitly
+        # Factor the hidden dimensions for parameter efficiency
+        self.layer1 = NdLinear(input_dims=(128, 1), hidden_size=(64, 4))
+        self.layer2 = NdLinear(input_dims=(64, 4), hidden_size=(32, 4))
+        self.layer3 = NdLinear(input_dims=(32, 4), hidden_size=(16, 2))
+
+        self.act = nn.ReLU()
+        self.dropout = nn.Dropout(0.3)
+        self.norm1 = nn.LayerNorm([64, 4])
+        self.norm2 = nn.LayerNorm([32, 4])
+
+        # Final head: flatten then classify
+        self.head = nn.Linear(16 * 2, num_classes)
+
+    def forward(self, x):
+        # x: (batch, 128) → unsqueeze to (batch, 128, 1)
+        x = x.unsqueeze(-1)
+
+        x = self.dropout(self.act(self.norm1(self.layer1(x))))  # (batch, 64, 4)
+        x = self.dropout(self.act(self.norm2(self.layer2(x))))  # (batch, 32, 4)
+        x = self.layer3(x)                                       # (batch, 16, 2)
+
+        x = x.view(x.shape[0], -1)  # (batch, 32)
+        return self.head(x)          # (batch, num_classes)
+```
+
+## Tips for choosing factored dimensions
+
+<AccordionGroup>
+  <Accordion title="Match tensor semantics where possible">
+    If your input features have a natural 2D structure (e.g., `(time_steps, features_per_step)`), use that structure directly as `input_dims`. NdLinear's efficiency gain is largest when the factorization reflects something real about the data.
+  </Accordion>
+  <Accordion title="Prefer balanced factors">
+    `NdLinear((32, 32), (16, 16))` is more efficient than `NdLinear((1, 1024), (1, 256))`. Balanced factors distribute the parameter budget evenly across dimensions.
+  </Accordion>
+  <Accordion title="Keep total elements consistent across layers">
+    When stacking NdLinear layers, ensure the product of `hidden_size` in one layer matches the product of `input_dims` in the next — or add a reshape between them.
+  </Accordion>
+  <Accordion title="Start from nn.Linear and factor iteratively">
+    Begin with 1D dims to confirm your model trains correctly, then factor the dimensions and compare parameter count vs. accuracy. This isolates the effect of factorization.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Time series forecasting" icon="chart-line" href="/guides/time-series">
+    Apply NdLinear to sequential data with temporal and feature dimensions.
+  </Card>
+  <Card title="Parameter efficiency" icon="chart-bar" href="/concepts/parameter-efficiency">
+    Understand the math behind NdLinear's parameter reduction.
+  </Card>
+</CardGroup>

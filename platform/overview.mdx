@@ -1,0 +1,69 @@
+---
+title: "Ensemble Platform"
+description: "Automatically compress any PyTorch model using NdLinear under the hood — no manual layer work required."
+---
+
+The Ensemble Platform is a commercial service built on top of NdLinear. Where NdLinear gives you the primitive to manually replace `nn.Linear` layers in your own code, the platform automates the entire compression pipeline: it accepts your model, identifies which layers to replace, tunes the decomposition hyperparameters, and returns a smaller, faster model ready for deployment.
+
+<Note>
+  Sign up and receive **10 million free credits** to compress your first models.
+</Note>
+
+## How it works
+
+<Steps>
+  <Step title="Upload your model">
+    Submit any PyTorch model through the platform. No code changes required.
+  </Step>
+  <Step title="Automatic compression">
+    The platform swaps eligible layers for NdLinear equivalents and tunes decomposition hyperparameters to meet your target constraints.
+  </Step>
+  <Step title="Download the compressed model">
+    Receive a smaller model with the same architecture interface, ready for fine-tuning or deployment.
+  </Step>
+</Steps>
+
+## Features
+
+<CardGroup cols={2}>
+  <Card title="Automatic layer swapping" icon="arrows-rotate">
+    Layers are identified and replaced with NdLinear equivalents without any manual intervention.
+  </Card>
+  <Card title="Up to 8x size reduction" icon="compress">
+    Parameter count can be reduced by up to 8x depending on the model architecture and constraints.
+  </Card>
+  <Card title="Hardware-aware tuning" icon="microchip">
+    Tailor compression to specific hardware targets and fine-tuning constraints.
+  </Card>
+  <Card title="No accuracy loss" icon="bullseye">
+    Compression is applied without degrading model accuracy.
+  </Card>
+  <Card title="Works with other techniques" icon="layer-group">
+    Compatible alongside pruning, quantization, and knowledge distillation.
+  </Card>
+  <Card title="Multiple export formats" icon="file-export">
+    Export compressed models to ONNX, TensorRT, SNPE, and more.
+  </Card>
+</CardGroup>
+
+## Relationship to NdLinear
+
+NdLinear is the open-source PyTorch module that powers the compression. You can use it directly in your own code to manually decompose `nn.Linear` layers — see the [NdLinear documentation](/). The Ensemble Platform wraps that same primitive in an automated service, handling layer selection, hyperparameter search, and validation so you don't have to.
+
+## Export options
+
+Compressed models can be exported to several deployment formats, including ONNX, TensorRT, and SNPE. See [Model Export](/platform/export) for details.
+
+## Get started
+
+<Card title="Create a free account" icon="rocket" href="https://app.ensemblecore.ai/signup" cta="Sign up">
+  Start with 10M free credits. Upload a model and get a compressed version in minutes.
+</Card>
+
+## Community
+
+Join the community on Discord to ask questions, share results, and follow development.
+
+<Card title="Discord" icon="discord" href="https://discord.gg/6DWHusWN">
+  Chat with the Ensemble team and other users.
+</Card>

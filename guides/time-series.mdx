@@ -1,0 +1,159 @@
+---
+title: "Time Series Forecasting"
+description: "Apply NdLinear to sequential time series data, preserving both the temporal and feature dimensions through the projection layer."
+---
+
+Time series data has two meaningful axes: the sequence length (temporal dimension) and the number of features at each time step. Flattening these into a single vector before projection discards that structure. NdLinear operates directly on the `(seq_len, features)` tensor, learning separate projections along each axis.
+
+## Input and output shapes
+
+For a forecasting task, the typical mapping is:
+
+```
+(batch, seq_len, features) → (batch, pred_horizon, output_features)
+```
+
+With NdLinear:
+
+```python
+from ndlinear import NdLinear
+
+# Look-back window: 96 time steps, 7 features
+# Forecast horizon: 24 time steps, 7 features
+layer = NdLinear(
+    input_dims=(96, 7),
+    hidden_size=(24, 7)
+)
+```
+
+The layer applies one projection along the temporal axis (96 → 24) and one along the feature axis (7 → 7), then combines them. The forecast horizon and feature count are explicit in the layer definition.
+
+## Simple forecasting model
+
+```python
+import torch
+import torch.nn as nn
+from ndlinear import NdLinear
+
+class NdLinearForecaster(nn.Module):
+    """
+    A lightweight time series forecaster using NdLinear to map a
+    look-back window to a forecast horizon.
+    """
+
+    def __init__(
+        self,
+        seq_len: int,
+        pred_horizon: int,
+        num_features: int,
+        hidden_seq: int = None,
+        dropout: float = 0.1,
+    ):
+        super().__init__()
+        hidden_seq = hidden_seq or seq_len
+
+        # Two-layer projection: seq_len → hidden_seq → pred_horizon
+        # Feature dimension is preserved throughout
+        self.layer1 = NdLinear(
+            input_dims=(seq_len, num_features),
+            hidden_size=(hidden_seq, num_features),
+        )
+        self.layer2 = NdLinear(
+            input_dims=(hidden_seq, num_features),
+            hidden_size=(pred_horizon, num_features),
+        )
+        self.norm = nn.LayerNorm([hidden_seq, num_features])
+        self.act = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        # x: (batch, seq_len, num_features)
+        x = self.dropout(self.act(self.norm(self.layer1(x))))
+        x = self.layer2(x)
+        # output: (batch, pred_horizon, num_features)
+        return x
+```
+
+Instantiate and run:
+
+```python
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+model = NdLinearForecaster(
+    seq_len=96,
+    pred_horizon=24,
+    num_features=7,
+).to(device)
+
+# Batch of 32 samples, 96-step look-back, 7 variates
+x = torch.randn(32, 96, 7).to(device)
+forecast = model(x)  # (32, 24, 7)
+```
+
+## Why structure preservation matters
+
+In a standard `nn.Linear` projection, every input scalar can directly influence every output scalar — a `(96, 7) → (24, 7)` map has `672 × 168 = 112,896` parameters.
+
+NdLinear decomposes this into:
+- A temporal projection: 96 → 24 (`2,304` parameters)
+- A feature projection: 7 → 7 (`49` parameters)
+
+Combined weight: `2,304 + 49 = 2,353` parameters — a **48× reduction** — while the model is explicitly constrained to treat time and features as separate structured axes. This matches the inductive bias of most time series: the temporal dimension and the feature dimension play different roles.
+
+<Note>
+Keeping sequence length as one dimension of `input_dims` is what makes this work. If you flatten `(96, 7)` to `(672,)` before passing to NdLinear, you lose the temporal structure and the parameter savings are reduced.
+</Note>
+
+## Running the example script
+
+The repository includes a time series forecasting script:
+
+```bash
+python src/ts_forecast.py
+```
+
+## Tips
+
+<Tip>
+Keep the temporal dimension as the first entry in `input_dims`. NdLinear applies projections in order, so the temporal projection is applied first, matching the natural reading direction of the sequence.
+</Tip>
+
+<Tip>
+For multivariate series where features are correlated, choose `hidden_size` feature dims that are multiples of the input feature count. This preserves the relative weighting of features across layers.
+</Tip>
+
+<Warning>
+NdLinear assumes the input tensor shape matches `input_dims` exactly (excluding the batch dimension). If you apply normalization or padding that changes `seq_len`, update `input_dims` accordingly.
+</Warning>
+
+## Using NdLinearGated for adaptive forecasting
+
+For datasets where only a subset of features or time steps are informative, `NdLinearGated` adds a learned gating mechanism on top of the structured projection:
+
+```python
+from ndlinear import NdLinearGated
+
+gated_layer = NdLinearGated(
+    input_dims=(96, 7),
+    hidden_size=(24, 7),
+    gating_mode="soft",       # differentiable soft gate
+    gated_modes="all",        # gate both temporal and feature axes
+    gating_hidden_dim=16,     # size of the gating network hidden layer
+)
+
+# Drop-in replacement for NdLinear
+forecast = gated_layer(x)  # (batch, 24, 7)
+```
+
+Set `gating_mode="hard"` for binary gates (non-differentiable, useful for analysis) or `gated_modes="first"` to gate only the temporal axis.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Multi-layer perceptrons" icon="layers" href="/guides/mlp">
+    Build general-purpose MLPs with factored NdLinear layers.
+  </Card>
+  <Card title="CNN image classification" icon="image" href="/guides/cnn">
+    Apply NdLinear to spatial feature maps from convolutional layers.
+  </Card>
+</CardGroup>

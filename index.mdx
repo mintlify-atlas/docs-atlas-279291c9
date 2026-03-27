@@ -1,97 +1,88 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "NdLinear — The next-gen linear layer"
+description: "A drop-in PyTorch module that replaces standard linear layers with a parameter-efficient, structure-preserving multi-dimensional transformation."
 ---
 
-## Setting up
+NdLinear is a PyTorch module by [Ensemble AI](https://ensemblecore.ai) that replaces `nn.Linear` without any architectural changes. Instead of flattening your tensors, NdLinear transforms them across a structured set of vector spaces — preserving multi-dimensional structure and capturing dependencies that standard layers discard.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Replace your first linear layer in under 5 minutes
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="How It Works" icon="lightbulb" href="/concepts/how-it-works">
+    Understand the multi-dimensional transformation approach
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="API Reference" icon="code" href="/api/ndlinear">
+    Full parameter and type documentation for NdLinear and NdLinearGated
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Ensemble Platform" icon="cloud" href="/platform/overview">
+    Upload any model and get back a smaller, faster version automatically
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Why NdLinear?
 
-Everything you need to create world-class documentation.
+Standard `nn.Linear` flattens multi-dimensional tensors before applying a weight matrix, discarding the structural relationships between dimensions. NdLinear preserves that structure by applying a sequence of dimension-wise transformations — one linear layer per dimension — capturing cross-dimensional dependencies with far fewer parameters.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={3}>
+  <Card title="Up to 8x smaller" icon="compress">
+    Reduce parameter count dramatically while maintaining or improving accuracy
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Structure-preserving" icon="cubes">
+    Retains the original tensor shape throughout the transformation
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Plug-and-play" icon="plug">
+    Replaces `nn.Linear` with a one-line change — no architecture redesign needed
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+</CardGroup>
 
-## Need inspiration?
+## Get started
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Steps>
+  <Step title="Install NdLinear">
+    ```bash
+    pip install ndlinear
+    ```
+  </Step>
+  <Step title="Import and replace your linear layer">
+    ```python
+    from ndlinear import NdLinear
+
+    # Before: nn.Linear(784, 256)
+    # After:
+    layer = NdLinear(input_dims=(28, 28), hidden_size=(16, 16))
+    ```
+  </Step>
+  <Step title="Run a forward pass">
+    ```python
+    import torch
+
+    x = torch.randn(32, 28, 28)
+    output = layer(x)  # shape: (32, 16, 16)
+    ```
+  </Step>
+  <Step title="Explore guides and examples">
+    See how to integrate NdLinear into [CNNs](/guides/cnn), [Transformers](/guides/transformer), [MLPs](/guides/mlp), and more.
+  </Step>
+</Steps>
+
+<Note>
+  A 130M parameter DiT model using NdLinear outperformed a 457M parameter baseline on the FID benchmark for ImageNet100.
+</Note>
+
+## What's included
+
+<CardGroup cols={2}>
+  <Card title="NdLinear" icon="layer-group" href="/api/ndlinear">
+    The core module. A direct replacement for `nn.Linear` that preserves multi-dimensional structure.
+  </Card>
+  <Card title="NdLinearGated" icon="sliders" href="/api/ndlinear-gated">
+    Extends NdLinear with soft and hard gating mechanisms for adaptive, context-dependent transformations.
+  </Card>
+  <Card title="Usage Guides" icon="book-open" href="/guides/cnn">
+    Step-by-step integration examples for CNNs, Transformers, MLPs, and time-series models.
+  </Card>
+  <Card title="Parameter Efficiency" icon="chart-bar" href="/concepts/parameter-efficiency">
+    Understand why NdLinear uses fewer parameters while capturing more structure.
+  </Card>
+</CardGroup>

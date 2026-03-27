@@ -1,22 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "NdLinear",
+  "projectType": "ai-ml",
+  "projectName": "NdLinear",
+  "projectDescription": "A drop-in PyTorch module that replaces standard linear layers with a parameter-efficient, structure-preserving multi-dimensional transformation.",
   "theme": "luma",
-  "colors": {
-    "primary": "#0dd3bc"
-  },
-  "favicon": "https://media.brand.dev/03fdee79-94df-4938-92c9-542b546eddac.png",
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/ensemble-core/NdLinear"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/ensemble-core/NdLinear"
-    }
-  },
+  "primaryColor": "#0dd3bc",
+  "lightColor": null,
+  "darkColor": null,
   "navigation": {
     "tabs": [
       {
@@ -69,5 +58,20 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Drop-in replacement for nn.Linear — no architecture changes required",
+    "Preserves multi-dimensional tensor structure natively without flattening",
+    "Up to 8x model size reduction with no accuracy loss",
+    "NdLinearGated extends NdLinear with soft/hard gating for adaptive information flow",
+    "Supports CNNs, Transformers, MLPs, RNNs, and Vision Transformers",
+    "Compatible with ONNX, TensorRT, SNPE, and other export formats",
+    "Works alongside pruning, quantization, and distillation"
+  ],
+  "publicApiSurface": [
+    "NdLinear(input_dims, hidden_size, transform_outer=True)",
+    "NdLinear.forward(X) -> torch.Tensor",
+    "NdLinearGated(input_dims, hidden_size, transform_outer=True, gating_mode='soft', gating_hidden_dim=16, gated_modes='all')",
+    "NdLinearGated.forward(X) -> torch.Tensor"
+  ]
 }

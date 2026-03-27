@@ -1,0 +1,54 @@
+---
+title: "Installation"
+description: "Install NdLinear via pip, conda, or from source."
+---
+
+## Requirements
+
+- Python >= 3.12
+- PyTorch >= 2.6.0
+
+<Note>
+  CUDA support is available through PyTorch's standard CUDA builds. For GPU-accelerated training on Linux, install the `cu126` variant of PyTorch before installing NdLinear:
+
+  ```bash
+  pip install torch --index-url https://download.pytorch.org/whl/cu126
+  ```
+</Note>
+
+## Install NdLinear
+
+<CodeGroup>
+
+```bash pip
+pip install ndlinear
+```
+
+```bash conda
+conda install conda-forge::ndlinear
+```
+
+```bash from source
+git clone https://github.com/ensemble-core/NdLinear.git
+cd NdLinear
+pip install .
+```
+
+</CodeGroup>
+
+## Verify the installation
+
+After installing, confirm the package is available and imports correctly:
+
+```python
+from ndlinear import NdLinear, NdLinearGated
+import torch
+
+# Create a layer and run a quick forward pass
+layer = NdLinear(input_dims=(4, 4), hidden_size=(8, 8))
+x = torch.randn(1, 4, 4)
+out = layer(x)
+print(out.shape)  # torch.Size([1, 8, 8])
+```
+
+If the shape prints without error, the installation is complete.
